@@ -5,13 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>WiFi QR to A4</title>
 <meta name="description" content="Turn WiFi QR code images into printable A4 sheets with the network name, password, and security type." />
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="vendor/jsQR.js"></script>
 <style>
-  html { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  html { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   .dropzone.dragover {
     border-color: #6366f1;
     background-color: #eef2ff;
@@ -116,7 +113,8 @@
 
   // ---- WiFi QR parsing ----
   // Format: WIFI:T:WPA;S:mynetwork;P:mypass;H:true;;
-  function parseWifiString(text) {
+  function parseWifiString(rawText) {
+    const text = (rawText || '').trim();
     if (!text || !text.toUpperCase().startsWith('WIFI:')) return null;
     const body = text.slice(5);
     const result = { ssid: '', pass: '', security: '', hidden: false };
@@ -126,11 +124,12 @@
     const fieldMap = { T: 'security', S: 'ssid', P: 'pass', H: 'hidden' };
 
     function commitField() {
-      if (key && fieldMap[key] !== undefined) {
-        if (fieldMap[key] === 'hidden') {
-          result.hidden = /^true$/i.test(value);
+      const normKey = key ? key.trim().toUpperCase() : key;
+      if (normKey && fieldMap[normKey] !== undefined) {
+        if (fieldMap[normKey] === 'hidden') {
+          result.hidden = /^true$/i.test(value.trim());
         } else {
-          result[fieldMap[key]] = value;
+          result[fieldMap[normKey]] = value;
         }
       }
       key = null; value = '';
@@ -219,12 +218,12 @@
 
       // header
       ctx.fillStyle = '#4f46e5';
-      ctx.font = '700 46px Inter, sans-serif';
+      ctx.font = '700 46px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('You\'re invited to connect', W / 2, 220);
 
       ctx.fillStyle = '#334155';
-      ctx.font = '400 30px Inter, sans-serif';
+      ctx.font = '400 30px system-ui, sans-serif';
       ctx.fillText('Scan the QR code below to join the WiFi', W / 2, 275);
 
       // QR code, centered, exactly as uploaded
@@ -255,16 +254,16 @@
         drawInfoRow(ctx, W, cursorY, 'SECURITY', securityLabel(item.wifi.security));
       } else {
         ctx.fillStyle = '#dc2626';
-        ctx.font = '600 30px Inter, sans-serif';
+        ctx.font = '600 30px system-ui, sans-serif';
         ctx.fillText('Could not read WiFi details from this QR code.', W / 2, cursorY + 20);
-        ctx.font = '400 26px Inter, sans-serif';
+        ctx.font = '400 26px system-ui, sans-serif';
         ctx.fillStyle = '#64748b';
         ctx.fillText('The image will still print with the QR code above.', W / 2, cursorY + 60);
       }
 
       // footer
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '400 22px Inter, sans-serif';
+      ctx.font = '400 22px system-ui, sans-serif';
       ctx.fillText('Open your camera app and point it at the code to connect automatically', W / 2, H - 110);
 
       resolve(canvas.toDataURL('image/png'));
@@ -284,7 +283,7 @@
   function drawInfoRow(ctx, W, y, label, value) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '700 24px Inter, sans-serif';
+    ctx.font = '700 24px system-ui, sans-serif';
     ctx.fillText(label, W / 2, y);
 
     ctx.fillStyle = '#0f172a';
@@ -316,6 +315,11 @@
           <div class="text-sm text-rose-600 font-medium">
             ${item.error ? escapeHtml(item.error) : 'No WiFi data detected in this QR code.'}
           </div>
+          ${item.rawText ? `
+            <div class="text-xs text-slate-400 bg-slate-50 rounded-lg p-2 break-all max-h-24 overflow-y-auto">
+              ${escapeHtml(item.rawText)}
+            </div>
+          ` : ''}
         `}
         <div class="mt-auto pt-2">
           <button data-download="${item.id}" class="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
@@ -354,7 +358,7 @@
 
     for (const file of files) {
       const id = ++idSeq;
-      const item = { id, fileName: file.name, imageEl: null, wifi: null, error: null, sheetDataUrl: null };
+      const item = { id, fileName: file.name, imageEl: null, wifi: null, error: null, rawText: null, sheetDataUrl: null };
       items.push(item);
 
       try {
@@ -367,6 +371,7 @@
 
         const decoded = decodeQrFromImage(img);
         if (decoded) {
+          item.rawText = decoded;
           const wifi = parseWifiString(decoded);
           item.wifi = wifi;
           if (!wifi) item.error = 'QR code found, but it is not a WiFi code.';
