@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WiFi QR to A4</title>
+<meta name="description" content="Turn WiFi QR code images into printable A4 sheets with the network name, password, and security type." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  .dropzone.dragover {
+    border-color: #6366f1;
+    background-color: #eef2ff;
+  }
+  .card-enter {
+    animation: cardEnter .35s ease both;
+  }
+  @keyframes cardEnter {
+    from { opacity: 0; transform: translateY(8px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+</style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-white text-slate-800">
+
+  <div class="max-w-5xl mx-auto px-5 py-10 sm:py-14">
+    <!-- Header -->
+    <header class="text-center mb-10">
+      <div class="inline-flex items-center gap-2 bg-indigo-600/10 text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/></svg>
+        No login, no upload, 100% local
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">WiFi QR &rarr; Printable A4</h1>
+      <p class="mt-3 text-slate-500 max-w-xl mx-auto">
+        Drop your WiFi QR code images below. We'll read the network name and password, then generate a clean A4 page per code &mdash; ready to print for guests to scan.
+      </p>
+    </header>
+
+    <!-- Dropzone -->
+    <div id="dropzone" class="dropzone relative border-2 border-dashed border-slate-300 rounded-2xl bg-white/70 backdrop-blur px-6 py-12 text-center transition-colors cursor-pointer shadow-sm hover:shadow-md">
+      <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+      <div class="flex flex-col items-center gap-3 pointer-events-none">
+        <div class="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+        </div>
+        <p class="text-slate-700 font-semibold">Drag &amp; drop QR code image(s) here</p>
+        <p class="text-slate-400 text-sm">or click to browse &middot; PNG, JPG, WEBP &middot; one or many at once</p>
+      </div>
+    </div>
+
+    <!-- Status row -->
+    <div id="status" class="mt-4 text-sm text-center text-slate-500 hidden"></div>
+
+    <!-- Actions -->
+    <div id="actions" class="mt-6 flex flex-wrap items-center justify-center gap-3 hidden">
+      <button id="downloadAllBtn" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2.5 rounded-xl shadow-sm shadow-indigo-600/30 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download all (<span id="allCount">0</span>)
+      </button>
+      <button id="clearBtn" class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-600 font-semibold px-5 py-2.5 rounded-xl border border-slate-200 transition-colors">
+        Clear all
+      </button>
+    </div>
+
+    <!-- Results grid -->
+    <div id="results" class="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+    <!-- Empty / error hints -->
+    <div id="emptyHint" class="mt-10 text-center text-slate-400 text-sm"></div>
+  </div>
+
+  <footer class="text-center text-xs text-slate-400 pb-8 px-4">
+    Everything runs in your browser &mdash; images are never uploaded anywhere.
+  </footer>
+
+  <!-- Hidden canvases used for decoding -->
+  <canvas id="decodeCanvas" class="hidden"></canvas>
+
+<script>
+(function () {
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const results = document.getElementById('results');
+  const statusEl = document.getElementById('status');
+  const actions = document.getElementById('actions');
+  const downloadAllBtn = document.getElementById('downloadAllBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const allCount = document.getElementById('allCount');
+  const emptyHint = document.getElementById('emptyHint');
+  const decodeCanvas = document.getElementById('decodeCanvas');
+
+  // items: { id, fileName, imageEl, wifi: {ssid,pass,security,hidden}|null, error, sheetDataUrl }
+  let items = [];
+  let idSeq = 0;
+
+  function setStatus(msg, show) {
+    statusEl.textContent = msg || '';
+    statusEl.classList.toggle('hidden', !show);
+  }
+
+  function updateActionsVisibility() {
+    const ready = items.filter(i => i.sheetDataUrl);
+    allCount.textContent = ready.length;
+    actions.classList.toggle('hidden', items.length === 0);
+    downloadAllBtn.disabled = ready.length === 0;
+    downloadAllBtn.classList.toggle('opacity-50', ready.length === 0);
+    downloadAllBtn.classList.toggle('cursor-not-allowed', ready.length === 0);
+    emptyHint.textContent = items.length === 0
+      ? ''
+      : '';
+  }
+
+  // ---- WiFi QR parsing ----
+  // Format: WIFI:T:WPA;S:mynetwork;P:mypass;H:true;;
+  function parseWifiString(text) {
+    if (!text || !text.toUpperCase().startsWith('WIFI:')) return null;
+    const body = text.slice(5);
+    const result = { ssid: '', pass: '', security: '', hidden: false };
+    let i = 0;
+    let key = null;
+    let value = '';
+    const fieldMap = { T: 'security', S: 'ssid', P: 'pass', H: 'hidden' };
+
+    function commitField() {
+      if (key && fieldMap[key] !== undefined) {
+        if (fieldMap[key] === 'hidden') {
+          result.hidden = /^true$/i.test(value);
+        } else {
+          result[fieldMap[key]] = value;
+        }
+      }
+      key = null; value = '';
+    }
+
+    let mode = 'key';
+    for (let idx = 0; idx < body.length; idx++) {
+      const ch = body[idx];
+      if (ch === '\\' && idx + 1 < body.length) {
+        value += body[idx + 1];
+        idx++;
+        continue;
+      }
+      if (mode === 'key') {
+        if (ch === ':') { key = value; value = ''; mode = 'value'; }
+        else { value += ch; }
+      } else {
+        if (ch === ';') { commitField(); mode = 'key'; }
+        else { value += ch; }
+      }
+    }
+    if (key) commitField();
+
+    if (!result.security) result.security = 'nopass';
+    return result;
+  }
+
+  function securityLabel(t) {
+    const s = (t || '').toUpperCase();
+    if (s === 'WPA' || s === 'WPA2' || s === 'WPA3') return 'WPA/WPA2';
+    if (s === 'WEP') return 'WEP';
+    if (s === 'NOPASS' || s === '') return 'Open (no password)';
+    return s;
+  }
+
+  // ---- Decoding an image file ----
+  function readFileAsImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Could not load image'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function decodeQrFromImage(img) {
+    const maxDim = 1200;
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    decodeCanvas.width = width;
+    decodeCanvas.height = height;
+    const ctx = decodeCanvas.getContext('2d');
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const code = jsQR(imageData.data, width, height, { inversionAttempts: 'attemptBoth' });
+    return code ? code.data : null;
+  }
+
+  // ---- Building the A4 print sheet ----
+  function buildA4Sheet(item) {
+    return new Promise((resolve) => {
+      const W = 1587, H = 2245; // 210x297mm @ 192dpi for crisp print
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      // background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+
+      // subtle border frame
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(60, 60, W - 120, H - 120);
+
+      // header
+      ctx.fillStyle = '#4f46e5';
+      ctx.font = '700 46px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('You\'re invited to connect', W / 2, 220);
+
+      ctx.fillStyle = '#334155';
+      ctx.font = '400 30px Inter, sans-serif';
+      ctx.fillText('Scan the QR code below to join the WiFi', W / 2, 275);
+
+      // QR code, centered, exactly as uploaded
+      const qrSize = 820;
+      const qrX = (W - qrSize) / 2;
+      const qrY = 340;
+
+      // white padded card behind QR for print contrast
+      const pad = 40;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      roundRect(ctx, qrX - pad, qrY - pad, qrSize + pad * 2, qrSize + pad * 2, 24);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(item.imageEl, qrX, qrY, qrSize, qrSize);
+      ctx.imageSmoothingEnabled = true;
+
+      let cursorY = qrY + qrSize + pad + 90;
+
+      if (item.wifi) {
+        drawInfoRow(ctx, W, cursorY, 'NETWORK NAME (SSID)', item.wifi.ssid || '—');
+        cursorY += 130;
+        drawInfoRow(ctx, W, cursorY, 'PASSWORD', item.wifi.pass || '(none)');
+        cursorY += 130;
+        drawInfoRow(ctx, W, cursorY, 'SECURITY', securityLabel(item.wifi.security));
+      } else {
+        ctx.fillStyle = '#dc2626';
+        ctx.font = '600 30px Inter, sans-serif';
+        ctx.fillText('Could not read WiFi details from this QR code.', W / 2, cursorY + 20);
+        ctx.font = '400 26px Inter, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('The image will still print with the QR code above.', W / 2, cursorY + 60);
+      }
+
+      // footer
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '400 22px Inter, sans-serif';
+      ctx.fillText('Open your camera app and point it at the code to connect automatically', W / 2, H - 110);
+
+      resolve(canvas.toDataURL('image/png'));
+    });
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawInfoRow(ctx, W, y, label, value) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 24px Inter, sans-serif';
+    ctx.fillText(label, W / 2, y);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '700 52px "Courier New", monospace';
+    ctx.fillText(value, W / 2, y + 60);
+  }
+
+  // ---- Rendering a result card in the UI ----
+  function renderCard(item) {
+    const wrap = document.createElement('div');
+    wrap.className = 'card-enter bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col';
+    wrap.id = 'card-' + item.id;
+
+    const previewSrc = item.sheetDataUrl || item.imageEl.src;
+
+    wrap.innerHTML = `
+      <div class="aspect-[210/297] bg-slate-50 flex items-center justify-center p-3 border-b border-slate-100">
+        <img src="${previewSrc}" class="max-h-full max-w-full object-contain rounded shadow-sm" />
+      </div>
+      <div class="p-4 flex-1 flex flex-col gap-2">
+        <p class="text-xs font-semibold text-slate-400 truncate" title="${item.fileName}">${item.fileName}</p>
+        ${item.wifi ? `
+          <div class="text-sm space-y-1">
+            <p><span class="text-slate-400">SSID:</span> <span class="font-semibold text-slate-800">${escapeHtml(item.wifi.ssid || '—')}</span></p>
+            <p><span class="text-slate-400">Password:</span> <span class="font-semibold text-slate-800">${escapeHtml(item.wifi.pass || '(none)')}</span></p>
+            <p><span class="text-slate-400">Security:</span> <span class="font-semibold text-slate-800">${escapeHtml(securityLabel(item.wifi.security))}</span></p>
+          </div>
+        ` : `
+          <div class="text-sm text-rose-600 font-medium">
+            ${item.error ? escapeHtml(item.error) : 'No WiFi data detected in this QR code.'}
+          </div>
+        `}
+        <div class="mt-auto pt-2">
+          <button data-download="${item.id}" class="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            Download A4
+          </button>
+        </div>
+      </div>
+    `;
+    return wrap;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function downloadDataUrl(dataUrl, fileName) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function sanitizeFileName(name) {
+    return name.replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'wifi-qr';
+  }
+
+  // ---- Main processing pipeline ----
+  async function processFiles(fileList) {
+    const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+
+    setStatus(`Processing ${files.length} image${files.length > 1 ? 's' : ''}...`, true);
+
+    for (const file of files) {
+      const id = ++idSeq;
+      const item = { id, fileName: file.name, imageEl: null, wifi: null, error: null, sheetDataUrl: null };
+      items.push(item);
+
+      try {
+        const img = await readFileAsImage(file);
+        item.imageEl = img;
+
+        const placeholder = renderCard(item);
+        placeholder.querySelector('img').classList.add('opacity-50');
+        results.prepend(placeholder);
+
+        const decoded = decodeQrFromImage(img);
+        if (decoded) {
+          const wifi = parseWifiString(decoded);
+          item.wifi = wifi;
+          if (!wifi) item.error = 'QR code found, but it is not a WiFi code.';
+        } else {
+          item.error = 'No QR code detected in this image.';
+        }
+
+        item.sheetDataUrl = await buildA4Sheet(item);
+
+        const newCard = renderCard(item);
+        placeholder.replaceWith(newCard);
+      } catch (err) {
+        item.error = err.message || 'Failed to process this file.';
+        const card = renderCard(item);
+        results.prepend(card);
+      }
+
+      updateActionsVisibility();
+    }
+
+    setStatus('', false);
+  }
+
+  // ---- Event wiring ----
+  dropzone.addEventListener('click', () => fileInput.click());
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      if (evt === 'dragleave' && e.target !== dropzone) return;
+      dropzone.classList.remove('dragover');
+    })
+  );
+  dropzone.addEventListener('drop', e => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      processFiles(e.dataTransfer.files);
+    }
+  });
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files && e.target.files.length) {
+      processFiles(e.target.files);
+      fileInput.value = '';
+    }
+  });
+
+  results.addEventListener('click', e => {
+    const btn = e.target.closest('[data-download]');
+    if (!btn) return;
+    const id = Number(btn.getAttribute('data-download'));
+    const item = items.find(i => i.id === id);
+    if (item && item.sheetDataUrl) {
+      const base = sanitizeFileName(item.fileName.replace(/\.[^.]+$/, ''));
+      downloadDataUrl(item.sheetDataUrl, `${base}-a4.png`);
+    }
+  });
+
+  downloadAllBtn.addEventListener('click', async () => {
+    const ready = items.filter(i => i.sheetDataUrl);
+    for (let idx = 0; idx < ready.length; idx++) {
+      const item = ready[idx];
+      const base = sanitizeFileName(item.fileName.replace(/\.[^.]+$/, ''));
+      downloadDataUrl(item.sheetDataUrl, `${base}-a4.png`);
+      // small delay so browsers don't block multiple rapid downloads
+      await new Promise(r => setTimeout(r, 350));
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    items = [];
+    idSeq = 0;
+    results.innerHTML = '';
+    updateActionsVisibility();
+    setStatus('', false);
+  });
+
+  updateActionsVisibility();
+})();
+</script>
+</body>
+</html>
