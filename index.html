@@ -211,27 +211,49 @@
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, H);
 
+      ctx.textAlign = 'center';
+
+      // Compute the total height of the content block so it can be
+      // centered vertically on the page instead of pinned to the top.
+      const qrSize = 820;
+      const pad = 40;
+      const headerH = 90;      // title + subtitle
+      const gapAfterHeader = 70;
+      const gapAfterQr = 90;
+      const infoRowH = 130;
+      const infoRowsCount = 3;
+      const gapAfterInfo = 100;
+      const footerH = 40;
+
+      const contentH = headerH + gapAfterHeader
+        + (qrSize + pad * 2)
+        + gapAfterQr
+        + (item.wifi ? infoRowH * infoRowsCount : infoRowH)
+        + gapAfterInfo
+        + footerH;
+
+      let y = Math.max(80, (H - contentH) / 2);
+
       // header
       ctx.fillStyle = '#4f46e5';
       ctx.font = '700 46px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('You\'re invited to connect', W / 2, 220);
+      ctx.fillText('You\'re invited to connect', W / 2, y + 46);
 
       ctx.fillStyle = '#334155';
       ctx.font = '400 30px system-ui, sans-serif';
-      ctx.fillText('Scan the QR code below to join the WiFi', W / 2, 275);
+      ctx.fillText('Scan the QR code below to join the WiFi', W / 2, y + headerH);
+
+      y += headerH + gapAfterHeader;
 
       // QR code, centered, exactly as uploaded
-      const qrSize = 820;
       const qrX = (W - qrSize) / 2;
-      const qrY = 340;
+      const qrY = y + pad;
 
       // white padded card behind QR for print contrast
-      const pad = 40;
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 2;
-      roundRect(ctx, qrX - pad, qrY - pad, qrSize + pad * 2, qrSize + pad * 2, 24);
+      roundRect(ctx, qrX - pad, y, qrSize + pad * 2, qrSize + pad * 2, 24);
       ctx.fill();
       ctx.stroke();
 
@@ -239,27 +261,31 @@
       ctx.drawImage(item.imageEl, qrX, qrY, qrSize, qrSize);
       ctx.imageSmoothingEnabled = true;
 
-      let cursorY = qrY + qrSize + pad + 90;
+      y += qrSize + pad * 2 + gapAfterQr;
 
       if (item.wifi) {
-        drawInfoRow(ctx, W, cursorY, 'NETWORK NAME (SSID)', item.wifi.ssid || '—');
-        cursorY += 130;
-        drawInfoRow(ctx, W, cursorY, 'PASSWORD', item.wifi.pass || '(none)');
-        cursorY += 130;
-        drawInfoRow(ctx, W, cursorY, 'SECURITY', securityLabel(item.wifi.security));
+        drawInfoRow(ctx, W, y, 'NETWORK NAME (SSID)', item.wifi.ssid || '—');
+        y += infoRowH;
+        drawInfoRow(ctx, W, y, 'PASSWORD', item.wifi.pass || '(none)');
+        y += infoRowH;
+        drawInfoRow(ctx, W, y, 'SECURITY', securityLabel(item.wifi.security));
+        y += infoRowH;
       } else {
         ctx.fillStyle = '#dc2626';
         ctx.font = '600 30px system-ui, sans-serif';
-        ctx.fillText('Could not read WiFi details from this QR code.', W / 2, cursorY + 20);
+        ctx.fillText('Could not read WiFi details from this QR code.', W / 2, y + 20);
         ctx.font = '400 26px system-ui, sans-serif';
         ctx.fillStyle = '#64748b';
-        ctx.fillText('The image will still print with the QR code above.', W / 2, cursorY + 60);
+        ctx.fillText('The image will still print with the QR code above.', W / 2, y + 60);
+        y += infoRowH;
       }
+
+      y += gapAfterInfo;
 
       // footer
       ctx.fillStyle = '#94a3b8';
       ctx.font = '400 22px system-ui, sans-serif';
-      ctx.fillText('Open your camera app and point it at the code to connect automatically', W / 2, H - 110);
+      ctx.fillText('Open your camera app and point it at the code to connect automatically', W / 2, y);
 
       resolve(canvas.toDataURL('image/png'));
     });
